@@ -1,0 +1,1378 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=5, user-scalable=yes">
+  <meta name="theme-color" content="#101522">
+  <title>NODE to MD</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #0b0f18;
+      --panel: #151b29;
+      --panel-2: #1b2435;
+      --line: #344057;
+      --text: #eef3ff;
+      --muted: #9ca9c2;
+      --accent: #73e0c1;
+      --accent-2: #8f9cff;
+      --danger: #ff7889;
+      --toolbar-h: 64px;
+    }
+
+    * { box-sizing: border-box; }
+
+    html, body {
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      overflow: hidden;
+      background: var(--bg);
+      color: var(--text);
+      font-family: Inter, "Noto Sans JP", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    button, input, textarea { font: inherit; }
+    button { color: inherit; }
+
+    .toolbar {
+      position: fixed;
+      inset: 0 0 auto 0;
+      z-index: 100;
+      height: var(--toolbar-h);
+      display: flex;
+      align-items: center;
+      gap: 2px;
+      padding: 10px 14px;
+      border-bottom: 1px solid #293247;
+      background: rgba(16, 21, 34, .96);
+      box-shadow: 0 10px 30px rgba(0, 0, 0, .25);
+      backdrop-filter: blur(14px);
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-right: auto;
+      min-width: 0;
+    }
+
+    .brand-mark {
+      width: 34px;
+      height: 34px;
+      flex: 0 0 auto;
+      border-radius: 11px;
+      background:
+        radial-gradient(circle at 33% 34%, #d9fff4 0 5%, transparent 6%),
+        linear-gradient(135deg, var(--accent), #5767e9);
+      box-shadow: 0 0 28px rgba(115, 224, 193, .23);
+    }
+
+    .brand-copy { min-width: 0; }
+    .brand-title { margin: 0; font-size: 14px; font-weight: 750; letter-spacing: .04em; white-space: nowrap; }
+    .brand-sub { margin: 2px 0 0; color: var(--muted); font-size: 10px; letter-spacing: .08em; white-space: nowrap; }
+
+    .tools { display: flex; align-items: center; gap: 2px; }
+    .tool-separator { color: #4b5870; padding: 0 1px; user-select: none; }
+
+    .tool-button, .button {
+      border: 1px solid transparent;
+      border-radius: 10px;
+      background: transparent;
+      cursor: pointer;
+      transition: background .15s ease, border-color .15s ease, color .15s ease, transform .15s ease;
+    }
+
+    .tool-button {
+      min-height: 38px;
+      padding: 7px 11px;
+      color: #dce5f8;
+      font-size: 13px;
+      font-weight: 650;
+    }
+
+    .tool-button:hover, .tool-button:focus-visible { background: #212a3d; border-color: #37445d; outline: none; }
+    .tool-button:active, .button:active { transform: translateY(1px); }
+    .tool-button.active { color: #08130f; background: var(--accent); border-color: var(--accent); }
+    .tool-button.danger:hover, .tool-button.danger:focus-visible { color: #ffd9de; background: #3a202c; border-color: #673141; }
+
+    .canvas-viewport {
+      position: absolute;
+      inset: var(--toolbar-h) 0 0;
+      overflow: hidden;
+      touch-action: none;
+      cursor: grab;
+      background-color: #0b0f18;
+      background-image:
+        linear-gradient(rgba(116, 139, 180, .055) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(116, 139, 180, .055) 1px, transparent 1px),
+        radial-gradient(circle at 50% 20%, rgba(67, 92, 151, .13), transparent 42%);
+      background-size: 24px 24px, 24px 24px, 100% 100%;
+    }
+
+    .canvas-viewport.panning { cursor: grabbing; }
+
+    .scene {
+      position: absolute;
+      left: 0;
+      top: 0;
+      width: 1px;
+      height: 1px;
+      transform-origin: 0 0;
+      will-change: transform;
+    }
+
+    .connections-layer {
+      position: absolute;
+      left: 0;
+      top: 0;
+      width: 1px;
+      height: 1px;
+      overflow: visible;
+      pointer-events: none;
+    }
+
+    .connection-line {
+      fill: none;
+      stroke: #64748f;
+      stroke-width: 2.5;
+      vector-effect: non-scaling-stroke;
+      opacity: .76;
+      filter: drop-shadow(0 2px 5px rgba(0, 0, 0, .4));
+      transition: stroke .16s ease, opacity .16s ease, stroke-width .16s ease;
+    }
+
+    .connection-line.highlighted { stroke: #f5cf6a; stroke-width: 4; opacity: 1; }
+    .connection-line.dimmed { opacity: .11; }
+
+    .blocks-layer { position: absolute; left: 0; top: 0; }
+
+    .empty-hint {
+      position: fixed;
+      left: 50%;
+      top: calc(50% + var(--toolbar-h) / 2);
+      z-index: 1;
+      width: min(420px, calc(100vw - 40px));
+      padding: 26px;
+      transform: translate(-50%, -50%);
+      border: 1px dashed #35415a;
+      border-radius: 18px;
+      color: var(--muted);
+      text-align: center;
+      pointer-events: none;
+      background: rgba(18, 24, 37, .48);
+    }
+
+    .empty-hint strong { display: block; margin-bottom: 8px; color: #e5ecfa; font-size: 16px; }
+    .empty-hint span { font-size: 13px; line-height: 1.7; }
+
+    .block {
+      position: absolute;
+      z-index: 5;
+      width: clamp(270px, 30vw, 360px);
+      min-height: 150px;
+      overflow: hidden;
+      border: 1px solid #344158;
+      border-radius: 16px;
+      background: linear-gradient(165deg, rgba(28, 37, 55, .98), rgba(18, 24, 37, .98));
+      box-shadow: 0 18px 55px rgba(0, 0, 0, .36), inset 0 1px rgba(255, 255, 255, .035);
+      cursor: default;
+      transition: border-color .16s ease, box-shadow .16s ease, opacity .16s ease, filter .16s ease;
+    }
+
+    .block.selected { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(115, 224, 193, .14), 0 22px 60px rgba(0, 0, 0, .4); }
+    .block.highlighted { border-color: #f5cf6a; box-shadow: 0 0 0 3px rgba(245, 207, 106, .15), 0 22px 60px rgba(0, 0, 0, .4); }
+    .block.dimmed { opacity: .25; filter: saturate(.45); }
+    .block.connect-target { border-color: var(--accent-2); box-shadow: 0 0 0 3px rgba(143, 156, 255, .17), 0 22px 60px rgba(0, 0, 0, .4); }
+
+    .block-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 13px 13px 10px 16px;
+      border-bottom: 1px solid rgba(62, 75, 101, .58);
+    }
+
+    .block-title {
+      min-width: 0;
+      flex: 1;
+      border: 0;
+      border-radius: 7px;
+      padding: 4px 6px;
+      color: #f6f8ff;
+      background: transparent;
+      font-size: 15px;
+      font-weight: 760;
+      outline: none;
+    }
+
+    .block-title:hover, .block-title:focus { background: rgba(255, 255, 255, .055); }
+
+    .drag-handle {
+      display: grid;
+      grid-template-columns: repeat(3, 3px);
+      gap: 3px;
+      width: 30px;
+      height: 30px;
+      place-content: center;
+      flex: 0 0 auto;
+      border: 1px solid transparent;
+      border-radius: 8px;
+      cursor: grab;
+      touch-action: none;
+    }
+
+    .drag-handle:hover { border-color: #46536e; background: rgba(255, 255, 255, .04); }
+    .drag-handle:active { cursor: grabbing; }
+    .drag-handle i { display: block; width: 3px; height: 3px; border-radius: 50%; background: #9eabc4; pointer-events: none; }
+
+    .description-wrap { padding: 12px 16px 13px; }
+
+    .block-description {
+      display: block;
+      width: 100%;
+      min-height: 54px;
+      resize: none;
+      overflow: hidden;
+      border: 0;
+      border-radius: 8px;
+      padding: 7px 8px;
+      color: #d8e0ef;
+      background: transparent;
+      line-height: 1.55;
+      outline: none;
+    }
+
+    .block-description:hover, .block-description:focus { background: rgba(255, 255, 255, .04); }
+    .block-description::placeholder, .block-title::placeholder { color: #6f7c96; }
+
+    .terminal-section { border-top: 1px solid #364159; padding: 10px 13px 13px 16px; }
+    .terminal-label { margin: 0 0 6px; color: #8592aa; font-size: 10px; font-weight: 750; letter-spacing: .13em; text-transform: uppercase; }
+    .terminal-row { display: flex; align-items: center; gap: 10px; min-height: 32px; }
+
+    .tag-input {
+      min-width: 0;
+      flex: 1;
+      border: 1px solid transparent;
+      border-radius: 7px;
+      padding: 5px 7px;
+      color: #b9c6da;
+      background: transparent;
+      font-size: 12px;
+      outline: none;
+    }
+
+    .tag-input:hover, .tag-input:focus { border-color: #3b4860; background: rgba(255, 255, 255, .035); }
+    .tag-input::placeholder { color: #66738c; }
+
+    .terminal {
+      width: 19px;
+      height: 19px;
+      flex: 0 0 auto;
+      border: 2px solid #8795af;
+      border-radius: 50%;
+      padding: 0;
+      background: #131a27;
+      cursor: pointer;
+      touch-action: manipulation;
+      box-shadow: 0 0 0 4px transparent;
+      transition: border-color .15s ease, background .15s ease, box-shadow .15s ease, transform .15s ease;
+    }
+
+    .terminal:hover, .terminal:focus-visible { border-color: var(--accent); transform: scale(1.1); outline: none; }
+    .terminal.connected { border-color: var(--accent-2); background: var(--accent-2); box-shadow: inset 0 0 0 4px #151c2a; }
+    .terminal.pending { border-color: var(--accent); background: var(--accent); box-shadow: 0 0 0 5px rgba(115, 224, 193, .16), inset 0 0 0 4px #151c2a; }
+
+    .status {
+      position: fixed;
+      z-index: 90;
+      left: 18px;
+      bottom: 18px;
+      max-width: min(580px, calc(100vw - 36px));
+      padding: 9px 13px;
+      border: 1px solid #33415a;
+      border-radius: 10px;
+      color: #cbd6e8;
+      background: rgba(20, 27, 41, .92);
+      box-shadow: 0 12px 36px rgba(0, 0, 0, .28);
+      font-size: 12px;
+      opacity: 0;
+      transform: translateY(8px);
+      pointer-events: none;
+      transition: opacity .18s ease, transform .18s ease;
+    }
+
+    .status.show { opacity: 1; transform: translateY(0); }
+    .status.error { border-color: #774052; color: #ffd8de; }
+
+    .zoom-indicator {
+      position: fixed;
+      z-index: 30;
+      right: 16px;
+      bottom: 16px;
+      padding: 6px 9px;
+      border: 1px solid #2e394f;
+      border-radius: 8px;
+      color: #8f9bb2;
+      background: rgba(14, 19, 29, .78);
+      font-size: 11px;
+      pointer-events: none;
+    }
+
+    .modal-backdrop {
+      position: fixed;
+      inset: 0;
+      z-index: 200;
+      display: grid;
+      place-items: center;
+      padding: 20px;
+      background: rgba(2, 5, 10, .72);
+      backdrop-filter: blur(5px);
+    }
+
+    .modal-backdrop[hidden] { display: none; }
+
+    .modal {
+      width: min(560px, 100%);
+      max-height: calc(100vh - 40px);
+      overflow: auto;
+      border: 1px solid #3b4860;
+      border-radius: 18px;
+      padding: 22px;
+      background: #171e2c;
+      box-shadow: 0 28px 90px rgba(0, 0, 0, .56);
+    }
+
+    .modal.wide { width: min(820px, 100%); }
+    .modal h2 { margin: 0 0 8px; font-size: 19px; }
+    .modal p { margin: 0 0 18px; color: #abb6ca; line-height: 1.65; }
+    .modal-actions { display: flex; justify-content: flex-end; gap: 9px; margin-top: 18px; flex-wrap: wrap; }
+
+    .button { padding: 9px 14px; border-color: #3a4760; background: #222c3f; font-weight: 680; }
+    .button:hover, .button:focus-visible { border-color: #596983; background: #29354b; outline: none; }
+    .button.primary { color: #07130f; border-color: var(--accent); background: var(--accent); }
+    .button.danger { border-color: #834052; background: #5a2635; }
+    .button.ghost { background: transparent; }
+
+    .field { display: grid; gap: 7px; margin: 14px 0; }
+    .field label, .field-title { color: #c9d3e4; font-size: 12px; font-weight: 700; }
+
+    .text-field, .output-text {
+      width: 100%;
+      border: 1px solid #3a4760;
+      border-radius: 10px;
+      padding: 10px 11px;
+      color: #edf2fc;
+      background: #101622;
+      outline: none;
+    }
+
+    .text-field:focus, .output-text:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(115, 224, 193, .11); }
+    .output-text { min-height: min(52vh, 520px); resize: vertical; font: 12px/1.55 ui-monospace, SFMono-Regular, Consolas, monospace; white-space: pre; }
+
+    .search-options { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 14px 0; }
+    .search-card { display: block; padding: 13px; border: 1px solid #344158; border-radius: 11px; cursor: pointer; background: #131a27; }
+    .search-card:has(input:checked) { border-color: var(--accent-2); background: #1d2540; }
+    .search-card input { margin-right: 7px; }
+    .search-card strong { font-size: 13px; }
+    .search-card span { display: block; margin: 7px 0 0 22px; color: #8f9bb2; font-size: 11px; line-height: 1.5; }
+
+    .error-list { margin: 12px 0 0; padding-left: 21px; color: #ffc9d1; line-height: 1.65; }
+
+    @media (max-width: 760px) {
+      :root { --toolbar-h: 58px; }
+      .toolbar { padding: 8px; overflow-x: auto; scrollbar-width: none; }
+      .toolbar::-webkit-scrollbar { display: none; }
+      .brand { display: none; }
+      .tools { margin: 0 auto; }
+      .tool-button { min-height: 40px; padding: 7px 9px; font-size: 12px; }
+      .block { width: min(300px, calc(100vw - 30px)); }
+      .modal-backdrop { padding: 10px; }
+      .modal { max-height: calc(100vh - 20px); padding: 18px; }
+      .search-options { grid-template-columns: 1fr; }
+      .zoom-indicator { right: 10px; bottom: 10px; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; }
+    }
+  </style>
+</head>
+<body>
+  <header class="toolbar" aria-label="ツールバー">
+    <div class="brand" aria-hidden="true">
+      <div class="brand-mark"></div>
+      <div class="brand-copy">
+        <p class="brand-title">NODE to MD</p>
+        <p class="brand-sub">FEATURE RELATIONSHIP EDITOR</p>
+      </div>
+    </div>
+    <nav class="tools" aria-label="編集操作">
+      <button class="tool-button" id="addButton" type="button">追加</button><span class="tool-separator">｜</span>
+      <button class="tool-button danger" id="deleteButton" type="button">削除</button><span class="tool-separator">｜</span>
+      <button class="tool-button" id="loadButton" type="button">読込</button><span class="tool-separator">｜</span>
+      <button class="tool-button" id="connectButton" type="button">接続</button><span class="tool-separator">｜</span>
+      <button class="tool-button" id="searchButton" type="button">検索</button><span class="tool-separator">｜</span>
+      <button class="tool-button" id="outputButton" type="button">出力</button>
+    </nav>
+  </header>
+
+  <main class="canvas-viewport" id="viewport" aria-label="設計キャンバス">
+    <div class="scene" id="scene">
+      <svg class="connections-layer" id="connectionsLayer" aria-hidden="true"></svg>
+      <div class="blocks-layer" id="blocksLayer"></div>
+    </div>
+    <div class="empty-hint" id="emptyHint">
+      <strong>機能ブロックを配置しましょう</strong>
+      <span>上部の「追加」で始めます。空白をドラッグして移動、ホイールまたはピンチで拡大縮小できます。</span>
+    </div>
+  </main>
+
+  <div class="status" id="status" role="status" aria-live="polite"></div>
+  <div class="zoom-indicator" id="zoomIndicator">100%</div>
+  <input id="fileInput" type="file" accept=".md,text/markdown,text/plain" hidden>
+
+  <div class="modal-backdrop" id="deleteModal" hidden>
+    <section class="modal" role="dialog" aria-modal="true" aria-labelledby="deleteTitle">
+      <h2 id="deleteTitle">ブロックを削除</h2>
+      <p id="deleteMessage"></p>
+      <div class="modal-actions">
+        <button class="button ghost" type="button" data-close="deleteModal">キャンセル</button>
+        <button class="button danger" id="confirmDeleteButton" type="button">削除する</button>
+      </div>
+    </section>
+  </div>
+
+  <div class="modal-backdrop" id="searchModal" hidden>
+    <section class="modal" role="dialog" aria-modal="true" aria-labelledby="searchTitle">
+      <h2 id="searchTitle">検索とハイライト</h2>
+      <p>タグ、または起点ブロックから直接の関連を表示します。</p>
+      <div class="search-options">
+        <label class="search-card">
+          <input type="radio" name="searchMode" value="tag" checked>
+          <strong>タグ検索</strong>
+          <span>一致するタグ、接続線、両端のブロック</span>
+        </label>
+        <label class="search-card">
+          <input type="radio" name="searchMode" value="block">
+          <strong>ブロック起点検索</strong>
+          <span>起点と直接つながるブロックのみ</span>
+        </label>
+      </div>
+      <div class="field" id="tagSearchField">
+        <label for="tagSearchInput">検索するタグ（完全一致）</label>
+        <input class="text-field" id="tagSearchInput" type="text" autocomplete="off" placeholder="例：連携">
+      </div>
+      <div class="modal-actions">
+        <button class="button ghost" id="clearSearchButton" type="button">検索解除</button>
+        <button class="button ghost" type="button" data-close="searchModal">キャンセル</button>
+        <button class="button primary" id="applySearchButton" type="button">検索する</button>
+      </div>
+    </section>
+  </div>
+
+  <div class="modal-backdrop" id="outputModal" hidden>
+    <section class="modal wide" role="dialog" aria-modal="true" aria-labelledby="outputTitle">
+      <h2 id="outputTitle">Markdown出力</h2>
+      <p>ダウンロードとコピー用テキストは同じ内容です。</p>
+      <textarea class="output-text" id="outputText" readonly spellcheck="false"></textarea>
+      <div class="modal-actions">
+        <button class="button ghost" type="button" data-close="outputModal">閉じる</button>
+        <button class="button" id="copyButton" type="button">コピー</button>
+        <button class="button primary" id="downloadButton" type="button">.mdをダウンロード</button>
+      </div>
+    </section>
+  </div>
+
+  <div class="modal-backdrop" id="errorModal" hidden>
+    <section class="modal" role="alertdialog" aria-modal="true" aria-labelledby="errorTitle">
+      <h2 id="errorTitle">処理できませんでした</h2>
+      <p id="errorLead">次の内容を確認してください。</p>
+      <ul class="error-list" id="errorList"></ul>
+      <div class="modal-actions">
+        <button class="button primary" type="button" data-close="errorModal">閉じる</button>
+      </div>
+    </section>
+  </div>
+
+  <script>
+    (() => {
+      'use strict';
+
+      const AI_HEADER = `# AI Design Blueprint
+
+This document describes a high-level design of features and their relationships. Detailed implementation specifications are not yet finalized.
+
+## Reading Rules
+
+- Each fenced code block represents one feature.
+- The first line is the block name.
+- \`==========\` marks the beginning of the feature description.
+- \`----------\` marks the beginning of the connected block list.
+- Connections are undirected and do not imply execution order.
+- Text after \`|\` is an optional relationship label.
+- \`Position\` is used only to restore block placement in the editor. It has no relevance to design or implementation and must be ignored by AI.
+- Do not treat unspecified details as confirmed requirements.`;
+
+      const project = { blocks: [], connections: [], nextBlock: 1, nextConnection: 1, nextSequence: 1 };
+      const view = { panX: innerWidth / 2, panY: Math.max(150, innerHeight / 3), zoom: 1 };
+      let selectedBlockId = null;
+      let pendingTerminal = null;
+      let searchState = null;
+      let blockPickSearch = false;
+      let outputMarkdown = '';
+      let statusTimer = 0;
+      let draggedRecently = false;
+
+      const $ = (selector, root = document) => root.querySelector(selector);
+      const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
+      const viewport = $('#viewport');
+      const scene = $('#scene');
+      const blocksLayer = $('#blocksLayer');
+      const connectionsLayer = $('#connectionsLayer');
+      const emptyHint = $('#emptyHint');
+      const status = $('#status');
+      const zoomIndicator = $('#zoomIndicator');
+
+      function uid(prefix, number) { return `${prefix}${number}`; }
+      function blockById(id) { return project.blocks.find(block => block.id === id); }
+      function connectionById(id) { return project.connections.find(connection => connection.id === id); }
+      function otherBlockId(connection, blockId) { return connection.from === blockId ? connection.to : connection.from; }
+      function tagsFromRaw(raw) { return raw === '' ? [] : raw.split(' '); }
+
+      function showStatus(message, isError = false) {
+        clearTimeout(statusTimer);
+        status.textContent = message;
+        status.classList.toggle('error', isError);
+        status.classList.add('show');
+        statusTimer = setTimeout(() => status.classList.remove('show'), 3600);
+      }
+
+      function openModal(id) {
+        const modal = document.getElementById(id);
+        modal.hidden = false;
+        requestAnimationFrame(() => modal.querySelector('button, input, textarea')?.focus());
+      }
+
+      function closeModal(id) { document.getElementById(id).hidden = true; }
+
+      function showErrors(errors, lead = '次の内容を確認してください。') {
+        $('#errorLead').textContent = lead;
+        const list = $('#errorList');
+        list.replaceChildren(...errors.map(error => {
+          const li = document.createElement('li');
+          li.textContent = error;
+          return li;
+        }));
+        openModal('errorModal');
+      }
+
+      function updateTransform() {
+        scene.style.transform = `translate(${view.panX}px, ${view.panY}px) scale(${view.zoom})`;
+        zoomIndicator.textContent = `${Math.round(view.zoom * 100)}%`;
+        requestAnimationFrame(updateConnectionLines);
+      }
+
+      function screenToWorld(clientX, clientY) {
+        const rect = viewport.getBoundingClientRect();
+        return {
+          x: (clientX - rect.left - view.panX) / view.zoom,
+          y: (clientY - rect.top - view.panY) / view.zoom
+        };
+      }
+
+      function addBlockAtViewportCenter() {
+        const rect = viewport.getBoundingClientRect();
+        const center = screenToWorld(rect.left + rect.width / 2, rect.top + rect.height / 2);
+        const candidates = [[0, 0]];
+        for (let ring = 1; ring <= 12; ring++) {
+          candidates.push(
+            [ring * 390, 0], [-ring * 390, 0], [0, ring * 290], [0, -ring * 290],
+            [ring * 390, ring * 290], [-ring * 390, ring * 290],
+            [ring * 390, -ring * 290], [-ring * 390, -ring * 290]
+          );
+        }
+        const baseX = center.x - 150;
+        const baseY = center.y - 80;
+        const placement = candidates.find(([offsetX, offsetY]) => {
+          const x = baseX + offsetX;
+          const y = baseY + offsetY;
+          return project.blocks.every(existing =>
+            x + 360 + 24 <= existing.x ||
+            x >= existing.x + 360 + 24 ||
+            y + 270 + 24 <= existing.y ||
+            y >= existing.y + 270 + 24
+          );
+        }) || candidates[candidates.length - 1];
+        const block = {
+          id: uid('b', project.nextBlock++),
+          name: '',
+          description: '',
+          x: Math.round(baseX + placement[0]),
+          y: Math.round(baseY + placement[1]),
+          draftTags: ''
+        };
+        project.blocks.push(block);
+        selectedBlockId = block.id;
+        clearSearch();
+        render();
+        requestAnimationFrame(() => blocksLayer.querySelector(`[data-block-id="${block.id}"] .block-title`)?.focus());
+      }
+
+      function createConnection(from, to, tagsRaw) {
+        if (from === to || !blockById(from) || !blockById(to)) return false;
+        project.connections.push({
+          id: uid('c', project.nextConnection++),
+          sequence: project.nextSequence++,
+          from,
+          to,
+          tagsRaw
+        });
+        blockById(from).draftTags = '';
+        pendingTerminal = null;
+        clearSearch();
+        render();
+        showStatus('接続を追加しました。');
+        return true;
+      }
+
+      function removeConnection(connectionId) {
+        const index = project.connections.findIndex(connection => connection.id === connectionId);
+        if (index < 0) return;
+        project.connections.splice(index, 1);
+        if (pendingTerminal?.connectionId === connectionId) pendingTerminal = null;
+        clearSearch();
+        render();
+        showStatus('接続を1本解除しました。');
+      }
+
+      function deleteSelectedBlock() {
+        if (!selectedBlockId) return;
+        project.blocks = project.blocks.filter(block => block.id !== selectedBlockId);
+        project.connections = project.connections.filter(connection => connection.from !== selectedBlockId && connection.to !== selectedBlockId);
+        if (pendingTerminal?.blockId === selectedBlockId) pendingTerminal = null;
+        selectedBlockId = null;
+        clearSearch();
+        closeModal('deleteModal');
+        render();
+        showStatus('ブロックと関連する接続を削除しました。');
+      }
+
+      function autoGrow(textarea) {
+        textarea.style.height = '0px';
+        textarea.style.height = `${Math.max(54, textarea.scrollHeight)}px`;
+      }
+
+      function makeHandle() {
+        const handle = document.createElement('div');
+        handle.className = 'drag-handle';
+        handle.setAttribute('role', 'button');
+        handle.setAttribute('aria-label', 'ブロックを移動');
+        handle.tabIndex = 0;
+        for (let index = 0; index < 9; index++) handle.append(document.createElement('i'));
+        return handle;
+      }
+
+      function renderBlock(block) {
+        const element = document.createElement('article');
+        element.className = 'block';
+        element.dataset.blockId = block.id;
+        element.style.left = `${block.x}px`;
+        element.style.top = `${block.y}px`;
+        element.classList.toggle('selected', selectedBlockId === block.id);
+
+        const header = document.createElement('div');
+        header.className = 'block-header';
+        const title = document.createElement('input');
+        title.className = 'block-title';
+        title.type = 'text';
+        title.value = block.name;
+        title.placeholder = 'ブロック名';
+        title.setAttribute('aria-label', 'ブロック名');
+        title.addEventListener('input', () => {
+          block.name = title.value;
+          updateAutomaticTagLabels();
+        });
+        title.addEventListener('pointerdown', event => event.stopPropagation());
+        const handle = makeHandle();
+        setupBlockDrag(handle, block);
+        header.append(title, handle);
+
+        const descriptionWrap = document.createElement('div');
+        descriptionWrap.className = 'description-wrap';
+        const description = document.createElement('textarea');
+        description.className = 'block-description';
+        description.value = block.description;
+        description.placeholder = '機能の概要を入力';
+        description.setAttribute('aria-label', '機能の概要');
+        description.addEventListener('input', () => {
+          block.description = description.value;
+          autoGrow(description);
+          requestAnimationFrame(updateConnectionLines);
+        });
+        description.addEventListener('pointerdown', event => event.stopPropagation());
+        descriptionWrap.append(description);
+
+        const terminalSection = document.createElement('div');
+        terminalSection.className = 'terminal-section';
+        const terminalLabel = document.createElement('p');
+        terminalLabel.className = 'terminal-label';
+        terminalLabel.textContent = '接続';
+        terminalSection.append(terminalLabel);
+
+        const connections = project.connections
+          .filter(connection => connection.from === block.id || connection.to === block.id)
+          .sort((a, b) => a.sequence - b.sequence);
+        for (const connection of connections) terminalSection.append(renderTerminalRow(block, connection));
+        terminalSection.append(renderTerminalRow(block, null));
+
+        element.append(header, descriptionWrap, terminalSection);
+        element.addEventListener('pointerdown', event => {
+          if (event.target.closest('input, textarea, button, .drag-handle')) return;
+          selectedBlockId = block.id;
+          renderSelection();
+        });
+        element.addEventListener('click', event => {
+          if (draggedRecently || event.target.closest('input, textarea, button, .drag-handle')) return;
+          if (blockPickSearch) {
+            applyBlockSearch(block.id);
+            return;
+          }
+          if (pendingTerminal && pendingTerminal.blockId !== block.id) {
+            const source = blockById(pendingTerminal.blockId);
+            createConnection(source.id, block.id, source.draftTags);
+          }
+        });
+        requestAnimationFrame(() => autoGrow(description));
+        return element;
+      }
+
+      function renderTerminalRow(block, connection) {
+        const row = document.createElement('div');
+        row.className = 'terminal-row';
+        if (connection) row.dataset.connectionId = connection.id;
+        const input = document.createElement('input');
+        input.className = 'tag-input';
+        input.type = 'text';
+        input.value = connection ? connection.tagsRaw : block.draftTags;
+        input.placeholder = connection
+          ? (blockById(otherBlockId(connection, block.id))?.name || '名称未設定')
+          : 'タグ（半角スペース区切り）';
+        if (connection) input.title = 'タグ未設定時は接続先ブロック名を表示します';
+        input.setAttribute('aria-label', connection ? '接続タグ' : '新しい接続のタグ');
+        input.addEventListener('input', () => {
+          if (connection) {
+            connection.tagsRaw = input.value;
+            blocksLayer
+              .querySelectorAll(`.terminal-row[data-connection-id="${connection.id}"] .tag-input`)
+              .forEach(peerInput => {
+                if (peerInput !== input) peerInput.value = input.value;
+              });
+          } else {
+            block.draftTags = input.value;
+          }
+        });
+        input.addEventListener('pointerdown', event => event.stopPropagation());
+
+        const terminal = document.createElement('button');
+        terminal.type = 'button';
+        terminal.className = `terminal ${connection ? 'connected' : ''}`;
+        terminal.dataset.blockId = block.id;
+        if (connection) terminal.dataset.connectionId = connection.id;
+        terminal.setAttribute('aria-label', connection ? '接続済み端子。ダブルクリックで解除' : '未接続端子');
+        terminal.title = connection ? 'ダブルクリック／ダブルタップでこの接続を解除' : '接続を開始';
+        if (!connection && pendingTerminal?.blockId === block.id) terminal.classList.add('pending');
+        terminal.addEventListener('pointerdown', event => event.stopPropagation());
+
+        if (connection) {
+          terminal.addEventListener('dblclick', event => {
+            event.preventDefault();
+            event.stopPropagation();
+            removeConnection(connection.id);
+          });
+          let lastTouch = 0;
+          terminal.addEventListener('pointerup', event => {
+            if (event.pointerType !== 'touch') return;
+            event.stopPropagation();
+            const now = Date.now();
+            if (now - lastTouch < 430) {
+              lastTouch = 0;
+              removeConnection(connection.id);
+            } else {
+              lastTouch = now;
+            }
+          });
+        } else {
+          terminal.addEventListener('click', event => {
+            event.stopPropagation();
+            if (pendingTerminal?.blockId === block.id) {
+              pendingTerminal = null;
+              showStatus('接続待機を解除しました。');
+            } else {
+              pendingTerminal = { blockId: block.id };
+              selectedBlockId = block.id;
+              showStatus('接続先のブロック本体を選択してください。');
+            }
+            render();
+          });
+        }
+        row.append(input, terminal);
+        return row;
+      }
+
+      function updateAutomaticTagLabels() {
+        $$('.terminal-row[data-connection-id]', blocksLayer).forEach(row => {
+          const connection = connectionById(row.dataset.connectionId);
+          const terminal = row.querySelector('.terminal');
+          const input = row.querySelector('.tag-input');
+          if (!connection || !terminal || !input) return;
+          const other = blockById(otherBlockId(connection, terminal.dataset.blockId));
+          input.placeholder = other?.name || '名称未設定';
+        });
+      }
+
+      function render() {
+        blocksLayer.replaceChildren(...project.blocks.map(renderBlock));
+        emptyHint.hidden = project.blocks.length > 0;
+        $('#connectButton').classList.toggle('active', Boolean(pendingTerminal));
+        renderSearchClasses();
+        requestAnimationFrame(updateConnectionLines);
+      }
+
+      function renderSelection() {
+        $$('.block', blocksLayer).forEach(element => element.classList.toggle('selected', element.dataset.blockId === selectedBlockId));
+      }
+
+      function endpointPosition(blockId, connectionId) {
+        const terminal = blocksLayer.querySelector(`.terminal[data-block-id="${blockId}"][data-connection-id="${connectionId}"]`);
+        if (!terminal) return null;
+        const terminalRect = terminal.getBoundingClientRect();
+        const viewportRect = viewport.getBoundingClientRect();
+        return {
+          x: (terminalRect.left + terminalRect.width / 2 - viewportRect.left - view.panX) / view.zoom,
+          y: (terminalRect.top + terminalRect.height / 2 - viewportRect.top - view.panY) / view.zoom
+        };
+      }
+
+      function updateConnectionLines() {
+        const fragment = document.createDocumentFragment();
+        for (const connection of project.connections.slice().sort((a, b) => a.sequence - b.sequence)) {
+          const start = endpointPosition(connection.from, connection.id);
+          const end = endpointPosition(connection.to, connection.id);
+          if (!start || !end) continue;
+          const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+          const dx = Math.max(70, Math.abs(end.x - start.x) * .42);
+          const direction = end.x >= start.x ? 1 : -1;
+          path.setAttribute('d', `M ${start.x} ${start.y} C ${start.x + dx * direction} ${start.y}, ${end.x - dx * direction} ${end.y}, ${end.x} ${end.y}`);
+          path.setAttribute('class', 'connection-line');
+          path.dataset.connectionId = connection.id;
+          fragment.append(path);
+        }
+        connectionsLayer.replaceChildren(fragment);
+        renderSearchClasses();
+      }
+
+      function setupBlockDrag(handle, block) {
+        let drag = null;
+        handle.addEventListener('pointerdown', event => {
+          event.preventDefault();
+          event.stopPropagation();
+          handle.setPointerCapture(event.pointerId);
+          selectedBlockId = block.id;
+          drag = { pointerId: event.pointerId, startX: event.clientX, startY: event.clientY, blockX: block.x, blockY: block.y, moved: false };
+          renderSelection();
+        });
+        handle.addEventListener('pointermove', event => {
+          if (!drag || drag.pointerId !== event.pointerId) return;
+          const dx = (event.clientX - drag.startX) / view.zoom;
+          const dy = (event.clientY - drag.startY) / view.zoom;
+          if (Math.hypot(dx, dy) > 2) drag.moved = true;
+          block.x = Math.round(drag.blockX + dx);
+          block.y = Math.round(drag.blockY + dy);
+          const element = handle.closest('.block');
+          element.style.left = `${block.x}px`;
+          element.style.top = `${block.y}px`;
+          updateConnectionLines();
+        });
+        const finish = event => {
+          if (!drag || drag.pointerId !== event.pointerId) return;
+          draggedRecently = drag.moved;
+          drag = null;
+          setTimeout(() => { draggedRecently = false; }, 0);
+        };
+        handle.addEventListener('pointerup', finish);
+        handle.addEventListener('pointercancel', finish);
+        handle.addEventListener('keydown', event => {
+          const amount = event.shiftKey ? 20 : 4;
+          if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(event.key)) return;
+          event.preventDefault();
+          if (event.key === 'ArrowLeft') block.x -= amount;
+          if (event.key === 'ArrowRight') block.x += amount;
+          if (event.key === 'ArrowUp') block.y -= amount;
+          if (event.key === 'ArrowDown') block.y += amount;
+          render();
+          requestAnimationFrame(() => blocksLayer.querySelector(`[data-block-id="${block.id}"] .drag-handle`)?.focus());
+        });
+      }
+
+      const canvasPointers = new Map();
+      let panGesture = null;
+      let pinchGesture = null;
+
+      function isCanvasBlank(target) { return target === viewport || target === scene || target === blocksLayer || target === connectionsLayer; }
+
+      viewport.addEventListener('pointerdown', event => {
+        if (!isCanvasBlank(event.target)) return;
+        viewport.setPointerCapture(event.pointerId);
+        canvasPointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+        if (canvasPointers.size === 1) {
+          panGesture = { pointerId: event.pointerId, x: event.clientX, y: event.clientY, panX: view.panX, panY: view.panY };
+          selectedBlockId = null;
+          renderSelection();
+        } else if (canvasPointers.size === 2) {
+          const points = [...canvasPointers.values()];
+          const centerX = (points[0].x + points[1].x) / 2;
+          const centerY = (points[0].y + points[1].y) / 2;
+          pinchGesture = {
+            distance: Math.hypot(points[1].x - points[0].x, points[1].y - points[0].y),
+            zoom: view.zoom,
+            world: screenToWorld(centerX, centerY),
+            centerX,
+            centerY
+          };
+          panGesture = null;
+        }
+        viewport.classList.add('panning');
+      });
+
+      viewport.addEventListener('pointermove', event => {
+        if (!canvasPointers.has(event.pointerId)) return;
+        canvasPointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+        if (canvasPointers.size === 1 && panGesture) {
+          view.panX = panGesture.panX + event.clientX - panGesture.x;
+          view.panY = panGesture.panY + event.clientY - panGesture.y;
+          updateTransform();
+        } else if (canvasPointers.size === 2 && pinchGesture) {
+          const points = [...canvasPointers.values()];
+          const centerX = (points[0].x + points[1].x) / 2;
+          const centerY = (points[0].y + points[1].y) / 2;
+          const distance = Math.hypot(points[1].x - points[0].x, points[1].y - points[0].y);
+          const viewportRect = viewport.getBoundingClientRect();
+          view.zoom = Math.min(2.5, Math.max(.25, pinchGesture.zoom * distance / Math.max(1, pinchGesture.distance)));
+          view.panX = centerX - viewportRect.left - pinchGesture.world.x * view.zoom;
+          view.panY = centerY - viewportRect.top - pinchGesture.world.y * view.zoom;
+          updateTransform();
+        }
+      });
+
+      function endCanvasPointer(event) {
+        canvasPointers.delete(event.pointerId);
+        if (canvasPointers.size === 0) {
+          panGesture = null;
+          pinchGesture = null;
+          viewport.classList.remove('panning');
+        } else if (canvasPointers.size === 1) {
+          const [pointerId, point] = [...canvasPointers.entries()][0];
+          panGesture = { pointerId, x: point.x, y: point.y, panX: view.panX, panY: view.panY };
+          pinchGesture = null;
+        }
+      }
+      viewport.addEventListener('pointerup', endCanvasPointer);
+      viewport.addEventListener('pointercancel', endCanvasPointer);
+
+      viewport.addEventListener('wheel', event => {
+        event.preventDefault();
+        const rect = viewport.getBoundingClientRect();
+        const world = screenToWorld(event.clientX, event.clientY);
+        const factor = Math.exp(-event.deltaY * .0014);
+        view.zoom = Math.min(2.5, Math.max(.25, view.zoom * factor));
+        view.panX = event.clientX - rect.left - world.x * view.zoom;
+        view.panY = event.clientY - rect.top - world.y * view.zoom;
+        updateTransform();
+      }, { passive: false });
+
+      function clearSearch() {
+        searchState = null;
+        blockPickSearch = false;
+        renderSearchClasses();
+      }
+
+      function applyTagSearch(term) {
+        const matchedConnections = new Set();
+        const matchedBlocks = new Set();
+        for (const connection of project.connections) {
+          if (tagsFromRaw(connection.tagsRaw).includes(term)) {
+            matchedConnections.add(connection.id);
+            matchedBlocks.add(connection.from);
+            matchedBlocks.add(connection.to);
+          }
+        }
+        searchState = { type: 'tag', blocks: matchedBlocks, connections: matchedConnections };
+        blockPickSearch = false;
+        renderSearchClasses();
+        showStatus(matchedConnections.size ? `${matchedConnections.size}本の接続が一致しました。` : '一致するタグはありません。');
+      }
+
+      function applyBlockSearch(blockId) {
+        const matchedBlocks = new Set([blockId]);
+        const matchedConnections = new Set();
+        for (const connection of project.connections) {
+          if (connection.from === blockId || connection.to === blockId) {
+            matchedConnections.add(connection.id);
+            matchedBlocks.add(otherBlockId(connection, blockId));
+          }
+        }
+        searchState = { type: 'block', blocks: matchedBlocks, connections: matchedConnections };
+        blockPickSearch = false;
+        selectedBlockId = blockId;
+        renderSearchClasses();
+        renderSelection();
+        showStatus('起点ブロックから直接つながる関連を表示しました。');
+      }
+
+      function renderSearchClasses() {
+        const blocks = $$('.block', blocksLayer);
+        const lines = $$('.connection-line', connectionsLayer);
+        blocks.forEach(element => {
+          const matched = searchState?.blocks.has(element.dataset.blockId);
+          element.classList.toggle('highlighted', Boolean(searchState && matched));
+          element.classList.toggle('dimmed', Boolean(searchState && !matched));
+          element.classList.toggle('connect-target', Boolean(pendingTerminal && pendingTerminal.blockId !== element.dataset.blockId));
+        });
+        lines.forEach(element => {
+          const matched = searchState?.connections.has(element.dataset.connectionId);
+          element.classList.toggle('highlighted', Boolean(searchState && matched));
+          element.classList.toggle('dimmed', Boolean(searchState && !matched));
+        });
+      }
+
+      function assignEmptyNames() {
+        const used = new Set(project.blocks.map(block => block.name).filter(name => name !== ''));
+        let number = 1;
+        for (const block of project.blocks) {
+          if (block.name !== '') continue;
+          while (used.has(`Block_${number}`)) number++;
+          block.name = `Block_${number}`;
+          used.add(block.name);
+          number++;
+        }
+      }
+
+      function assignEmptyConnectionTags() {
+        for (const connection of project.connections) {
+          if (connection.tagsRaw !== '') continue;
+          const targetBlock = blockById(connection.to);
+          if (targetBlock) connection.tagsRaw = targetBlock.name;
+        }
+      }
+
+      function validateForOutput() {
+        assignEmptyNames();
+        assignEmptyConnectionTags();
+        render();
+        const errors = [];
+        const counts = new Map();
+        for (const block of project.blocks) counts.set(block.name, (counts.get(block.name) || 0) + 1);
+        const duplicates = [...counts.entries()].filter(([, count]) => count > 1).map(([name]) => name);
+        if (duplicates.length) errors.push(`ブロック名が重複しています：${duplicates.map(name => `「${name}」`).join('、')}。名前を変更して再試行してください。`);
+        for (const connection of project.connections) {
+          if (!blockById(connection.from) || !blockById(connection.to)) errors.push(`接続 ${connection.id} が存在しないブロックを参照しています。`);
+        }
+        return errors;
+      }
+
+      function createMarkdown() {
+        const fences = project.blocks.map(block => {
+          const lines = [
+            '```text',
+            block.name,
+            `Position: ${Math.round(block.x)}, ${Math.round(block.y)}`,
+            '==========',
+            block.description,
+            '----------'
+          ];
+          const connections = project.connections
+            .filter(connection => connection.from === block.id || connection.to === block.id)
+            .sort((a, b) => a.sequence - b.sequence);
+          for (const connection of connections) {
+            const other = blockById(otherBlockId(connection, block.id));
+            lines.push(connection.tagsRaw === '' ? other.name : `${other.name} | ${connection.tagsRaw}`);
+          }
+          lines.push('```');
+          return lines.join('\n');
+        });
+        return fences.length ? `${AI_HEADER}\n\n\n${fences.join('\n\n\n')}` : AI_HEADER;
+      }
+
+      function parseMarkdown(text) {
+        const errors = [];
+        const blocks = [];
+        const records = [];
+        const fenceRegex = /```text[ \t]*\r?\n([\s\S]*?)```/g;
+        let match;
+        let fenceIndex = 0;
+        while ((match = fenceRegex.exec(text)) !== null) {
+          fenceIndex++;
+          const content = match[1].replace(/\r\n/g, '\n').replace(/\n$/, '');
+          const lines = content.split('\n');
+          const name = lines[0] ?? '';
+          const positionMatch = /^Position:\s*(-?(?:\d+(?:\.\d+)?|\.\d+))\s*,\s*(-?(?:\d+(?:\.\d+)?|\.\d+))\s*$/.exec(lines[1] ?? '');
+          if (!name) errors.push(`${fenceIndex}番目のブロック名が空です。`);
+          if (!positionMatch) errors.push(`「${name || `${fenceIndex}番目`}」の座標形式が正しくありません。`);
+          if (lines[2] !== '==========') errors.push(`「${name || `${fenceIndex}番目`}」に概要開始記号がありません。`);
+          const separatorIndex = lines.indexOf('----------', 3);
+          if (separatorIndex < 0) errors.push(`「${name || `${fenceIndex}番目`}」に接続一覧開始記号がありません。`);
+          const block = {
+            id: uid('b', fenceIndex),
+            name,
+            description: separatorIndex >= 0 ? lines.slice(3, separatorIndex).join('\n') : '',
+            x: positionMatch ? Number(positionMatch[1]) : 0,
+            y: positionMatch ? Number(positionMatch[2]) : 0,
+            draftTags: ''
+          };
+          if (!Number.isFinite(block.x) || !Number.isFinite(block.y)) errors.push(`「${name}」の座標が有効な数値ではありません。`);
+          blocks.push(block);
+          if (separatorIndex >= 0) {
+            lines.slice(separatorIndex + 1).forEach((line, localIndex) => {
+              if (line === '') return;
+              records.push({ sourceName: name, raw: line, localIndex, blockIndex: fenceIndex - 1 });
+            });
+          }
+        }
+        if (!fenceIndex && text.trim()) errors.push('`text` コードフェンスが見つかりません。');
+
+        const nameCounts = new Map();
+        for (const block of blocks) nameCounts.set(block.name, (nameCounts.get(block.name) || 0) + 1);
+        for (const [name, count] of nameCounts) if (count > 1) errors.push(`ブロック名「${name}」が重複しています。`);
+        const nameMap = new Map(blocks.map(block => [block.name, block]));
+        const knownNames = blocks.map(block => block.name).sort((a, b) => b.length - a.length);
+
+        for (const record of records) {
+          let targetName = null;
+          let tagsRaw = '';
+          if (nameMap.has(record.raw)) {
+            targetName = record.raw;
+          } else {
+            targetName = knownNames.find(name => record.raw.startsWith(`${name} | `)) ?? null;
+            if (targetName !== null) tagsRaw = record.raw.slice(targetName.length + 3);
+          }
+          if (targetName === null) {
+            errors.push(`「${record.sourceName}」の接続先を解釈できません：${record.raw}`);
+            continue;
+          }
+          if (!nameMap.has(targetName)) errors.push(`「${record.sourceName}」が存在しない「${targetName}」を参照しています。`);
+          if (targetName === record.sourceName) errors.push(`「${record.sourceName}」から同じブロック自身への接続は復元できません。`);
+          record.targetName = targetName;
+          record.tagsRaw = tagsRaw;
+        }
+        if (errors.length) throw errors;
+
+        const blockOrder = new Map(blocks.map((block, index) => [block.name, index]));
+        const grouped = new Map();
+        for (const record of records) {
+          const a = blockOrder.get(record.sourceName) <= blockOrder.get(record.targetName) ? record.sourceName : record.targetName;
+          const b = a === record.sourceName ? record.targetName : record.sourceName;
+          const key = JSON.stringify([a, b, record.tagsRaw]);
+          if (!grouped.has(key)) grouped.set(key, { a, b, tagsRaw: record.tagsRaw, aRecords: [], bRecords: [] });
+          grouped.get(key)[record.sourceName === a ? 'aRecords' : 'bRecords'].push(record);
+        }
+
+        const connectionDrafts = [];
+        let draftId = 1;
+        for (const group of grouped.values()) {
+          if (group.aRecords.length !== group.bRecords.length) {
+            errors.push(`「${group.a}」と「${group.b}」の接続記録が一致しません（タグ：${group.tagsRaw || 'なし'}）。`);
+            continue;
+          }
+          for (let index = 0; index < group.aRecords.length; index++) {
+            const draft = {
+              tempId: `t${draftId++}`,
+              fromName: group.a,
+              toName: group.b,
+              tagsRaw: group.tagsRaw,
+              records: [group.aRecords[index], group.bRecords[index]]
+            };
+            group.aRecords[index].draft = draft;
+            group.bRecords[index].draft = draft;
+            connectionDrafts.push(draft);
+          }
+        }
+        if (errors.length) throw errors;
+
+        const adjacency = new Map(connectionDrafts.map(draft => [draft.tempId, new Set()]));
+        const indegree = new Map(connectionDrafts.map(draft => [draft.tempId, 0]));
+        for (const block of blocks) {
+          const ordered = records.filter(record => record.sourceName === block.name).sort((a, b) => a.localIndex - b.localIndex);
+          for (let index = 1; index < ordered.length; index++) {
+            const before = ordered[index - 1].draft.tempId;
+            const after = ordered[index].draft.tempId;
+            if (before !== after && !adjacency.get(before).has(after)) {
+              adjacency.get(before).add(after);
+              indegree.set(after, indegree.get(after) + 1);
+            }
+          }
+        }
+        const firstSeen = new Map(connectionDrafts.map((draft, index) => [draft.tempId, Math.min(...draft.records.map(record => record.blockIndex * 100000 + record.localIndex), index)]));
+        const queue = connectionDrafts.filter(draft => indegree.get(draft.tempId) === 0).sort((a, b) => firstSeen.get(a.tempId) - firstSeen.get(b.tempId));
+        const sorted = [];
+        while (queue.length) {
+          const current = queue.shift();
+          sorted.push(current);
+          for (const nextId of adjacency.get(current.tempId)) {
+            indegree.set(nextId, indegree.get(nextId) - 1);
+            if (indegree.get(nextId) === 0) {
+              queue.push(connectionDrafts.find(draft => draft.tempId === nextId));
+              queue.sort((a, b) => firstSeen.get(a.tempId) - firstSeen.get(b.tempId));
+            }
+          }
+        }
+        if (sorted.length !== connectionDrafts.length) throw ['ブロック間で接続の出現順が矛盾しています。曖昧な状態のため読み込みませんでした。'];
+
+        const connections = sorted.map((draft, index) => ({
+          id: uid('c', index + 1),
+          sequence: index + 1,
+          from: nameMap.get(draft.fromName).id,
+          to: nameMap.get(draft.toName).id,
+          tagsRaw: draft.tagsRaw
+        }));
+        return { blocks, connections, nextBlock: blocks.length + 1, nextConnection: connections.length + 1, nextSequence: connections.length + 1 };
+      }
+
+      function loadMarkdown(text) {
+        let parsed;
+        try {
+          parsed = parseMarkdown(text);
+        } catch (errors) {
+          showErrors(Array.isArray(errors) ? errors : [String(errors)], 'Markdownを読み込めませんでした。現在のキャンバスは変更されていません。');
+          return;
+        }
+        project.blocks = parsed.blocks;
+        project.connections = parsed.connections;
+        project.nextBlock = parsed.nextBlock;
+        project.nextConnection = parsed.nextConnection;
+        project.nextSequence = parsed.nextSequence;
+        selectedBlockId = null;
+        pendingTerminal = null;
+        clearSearch();
+        render();
+        fitProjectInView();
+        showStatus(`${project.blocks.length}個のブロックを読み込みました。`);
+      }
+
+      function fitProjectInView() {
+        if (!project.blocks.length) return;
+        const minX = Math.min(...project.blocks.map(block => block.x));
+        const minY = Math.min(...project.blocks.map(block => block.y));
+        const maxX = Math.max(...project.blocks.map(block => block.x + 360));
+        const maxY = Math.max(...project.blocks.map(block => block.y + 240));
+        const rect = viewport.getBoundingClientRect();
+        view.zoom = Math.min(1, Math.max(.3, Math.min((rect.width - 60) / Math.max(1, maxX - minX), (rect.height - 60) / Math.max(1, maxY - minY))));
+        view.panX = (rect.width - (maxX - minX) * view.zoom) / 2 - minX * view.zoom;
+        view.panY = (rect.height - (maxY - minY) * view.zoom) / 2 - minY * view.zoom;
+        updateTransform();
+      }
+
+      $('#addButton').addEventListener('click', addBlockAtViewportCenter);
+      $('#deleteButton').addEventListener('click', () => {
+        if (!selectedBlockId) { showStatus('削除するブロックを選択してください。', true); return; }
+        const block = blockById(selectedBlockId);
+        $('#deleteMessage').textContent = `「${block.name || '名称未設定'}」を削除しますか？ このブロックと接続線が削除されます。`;
+        openModal('deleteModal');
+      });
+      $('#confirmDeleteButton').addEventListener('click', deleteSelectedBlock);
+      $('#loadButton').addEventListener('click', () => $('#fileInput').click());
+      $('#fileInput').addEventListener('change', async event => {
+        const file = event.target.files?.[0];
+        event.target.value = '';
+        if (!file) return;
+        try { loadMarkdown(await file.text()); }
+        catch (error) { showErrors([`ファイルを読み取れませんでした：${error.message}`]); }
+      });
+      $('#connectButton').addEventListener('click', () => {
+        if (pendingTerminal) {
+          pendingTerminal = null;
+          render();
+          showStatus('接続待機を解除しました。');
+          return;
+        }
+        if (!selectedBlockId) {
+          showStatus('ブロックの○端子を選ぶか、ブロックを選択してから「接続」を押してください。');
+          return;
+        }
+        pendingTerminal = { blockId: selectedBlockId };
+        render();
+        showStatus('接続先のブロック本体を選択してください。');
+      });
+      $('#searchButton').addEventListener('click', () => openModal('searchModal'));
+      $$('input[name="searchMode"]').forEach(input => input.addEventListener('change', () => {
+        $('#tagSearchField').hidden = $('input[name="searchMode"]:checked').value !== 'tag';
+      }));
+      $('#applySearchButton').addEventListener('click', () => {
+        const mode = $('input[name="searchMode"]:checked').value;
+        closeModal('searchModal');
+        if (mode === 'tag') {
+          const term = $('#tagSearchInput').value;
+          if (!term) { showStatus('検索するタグを入力してください。', true); return; }
+          applyTagSearch(term);
+        } else {
+          clearSearch();
+          blockPickSearch = true;
+          showStatus('検索の起点にするブロック本体を選択してください。');
+        }
+      });
+      $('#clearSearchButton').addEventListener('click', () => {
+        clearSearch();
+        closeModal('searchModal');
+        showStatus('検索表示を解除しました。');
+      });
+      $('#outputButton').addEventListener('click', () => {
+        const errors = validateForOutput();
+        if (errors.length) { showErrors(errors, '出力を停止しました。修正して再試行してください。'); return; }
+        outputMarkdown = createMarkdown();
+        $('#outputText').value = outputMarkdown;
+        openModal('outputModal');
+      });
+      $('#copyButton').addEventListener('click', async () => {
+        try {
+          await navigator.clipboard.writeText(outputMarkdown);
+          showStatus('Markdownをコピーしました。');
+        } catch {
+          $('#outputText').focus();
+          $('#outputText').select();
+          showStatus('テキストを選択しました。端末のコピー操作を使用してください。');
+        }
+      });
+      $('#downloadButton').addEventListener('click', () => {
+        const blob = new Blob([outputMarkdown], { type: 'text/markdown;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        const anchor = document.createElement('a');
+        anchor.href = url;
+        anchor.download = 'design-blueprint.md';
+        document.body.append(anchor);
+        anchor.click();
+        anchor.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+        showStatus('Markdownファイルをダウンロードしました。');
+      });
+
+      $$('[data-close]').forEach(button => button.addEventListener('click', () => closeModal(button.dataset.close)));
+      $$('.modal-backdrop').forEach(backdrop => backdrop.addEventListener('pointerdown', event => {
+        if (event.target === backdrop && backdrop.id !== 'deleteModal') closeModal(backdrop.id);
+      }));
+      document.addEventListener('keydown', event => {
+        if (event.key === 'Escape') {
+          const open = $$('.modal-backdrop').find(modal => !modal.hidden);
+          if (open) closeModal(open.id);
+          else if (pendingTerminal) { pendingTerminal = null; render(); showStatus('接続待機を解除しました。'); }
+          else if (searchState || blockPickSearch) { clearSearch(); showStatus('検索表示を解除しました。'); }
+        }
+      });
+      addEventListener('resize', () => requestAnimationFrame(updateConnectionLines));
+
+      updateTransform();
+      render();
+    })();
+  </script>
+</body>
+</html>
