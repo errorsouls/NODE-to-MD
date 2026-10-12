@@ -4,6 +4,16 @@ A lightweight, browser-based visual node editor for organizing ideas, features, 
 
 機能やアイデアをノードで視覚的に整理し、AIが読み取りやすいMarkdown形式に変換するWebツールです。
 
+Try NODE to MD / ブラウザで使う
+
+"日本語版を開く / Japanese" (https://errorsouls.github.io/NODE-to-MD/)
+
+"Open English Version / 英語版" (https://errorsouls.github.io/NODE-to-MD/editor-en.html)
+
+上記のリンクからブラウザ上で直接利用できます。インストールは不要です。
+
+You can use NODE to MD directly in your browser using the links above. No installation required.
+
 Features / 機能
 
 - Create and edit feature blocks / ブロックの作成・編集
