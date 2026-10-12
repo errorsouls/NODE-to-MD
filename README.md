@@ -34,7 +34,7 @@ Usage / 使い方
 
 Languages / 対応言語
 
-- "editor-jp.html" — Japanese / 日本語版
+- "index.html" — Japanese / 日本語版
 - "editor-en.html" — English / 英語版
 
 Markdown Format / 出力形式
